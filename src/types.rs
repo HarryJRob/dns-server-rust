@@ -1,6 +1,7 @@
 pub struct Message {
     pub header: Header,
     pub question: Question,
+    pub answers: Vec<Answer>,
 }
 
 impl From<Message> for Vec<u8> {
@@ -12,6 +13,12 @@ impl From<Message> for Vec<u8> {
 
         res.extend_from_slice(&header);
         res.extend_from_slice(&question);
+
+        for resource in val.answers {
+            let resource: Vec<u8> = resource.into();
+
+            res.extend_from_slice(&resource);
+        }
 
         res
     }
@@ -95,7 +102,7 @@ pub enum QuestionType {
     ALL = 255,
 }
 
-pub enum Class {
+pub enum QuestionClass {
     IN = 1,
     CS = 2,
     CH = 3,
@@ -104,28 +111,92 @@ pub enum Class {
 }
 
 pub struct Question {
-    pub domain: String,
+    pub name: String,
     pub question_type: QuestionType,
-    pub class: Class,
+    pub class: QuestionClass,
 }
 
 impl From<Question> for Vec<u8> {
     fn from(val: Question) -> Self {
         let mut res = Vec::new();
 
-        for part in val.domain.split(".") {
-            res.push(part.len() as u8);
-            res.extend(part.as_bytes());
-        }
-
-        res.push(0);
-
+        let name = encode_string(val.name);
         let question_type = (val.question_type as u16).to_be_bytes();
         let class = (val.class as u16).to_be_bytes();
 
+        res.extend_from_slice(&name);
         res.extend_from_slice(&question_type);
         res.extend_from_slice(&class);
 
         res
     }
+}
+
+pub enum ResourceType {
+    A = 1,
+    NS = 2,
+    MD = 3,
+    MF = 4,
+    CNAME = 5,
+    SOA = 6,
+    MB = 7,
+    MG = 8,
+    MR = 9,
+    NULL = 10,
+    WKS = 11,
+    PTR = 12,
+    HINFO = 13,
+    MINFO = 14,
+    MX = 15,
+    TXT = 16,
+}
+
+pub enum ResourceClass {
+    IN = 1,
+    CS = 2,
+    CH = 3,
+    HS = 4,
+}
+
+pub struct Answer {
+    pub name: String,
+    pub resource_type: ResourceType,
+    pub class: ResourceClass,
+    pub time_to_live: u32,
+    pub length: u16,
+    pub data: Vec<u8>,
+}
+
+impl From<Answer> for Vec<u8> {
+    fn from(value: Answer) -> Self {
+        let mut res: Vec<u8> = Vec::new();
+
+        let name = encode_string(value.name);
+        let resource_type = (value.resource_type as u16).to_be_bytes();
+        let class = (value.class as u16).to_be_bytes();
+        let time_to_live = value.time_to_live.to_be_bytes();
+        let length = value.length.to_be_bytes();
+
+        res.extend_from_slice(&name);
+        res.extend_from_slice(&resource_type);
+        res.extend_from_slice(&class);
+        res.extend_from_slice(&time_to_live);
+        res.extend_from_slice(&length);
+        res.extend_from_slice(&value.data);
+
+        res
+    }
+}
+
+fn encode_string(string: String) -> Vec<u8> {
+    let mut res: Vec<u8> = Vec::new();
+
+    for part in string.split(".") {
+        res.push(part.len() as u8);
+        res.extend(part.as_bytes());
+    }
+
+    res.push(0);
+
+    res
 }

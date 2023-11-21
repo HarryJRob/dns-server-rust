@@ -1,6 +1,9 @@
 use std::net::UdpSocket;
 
-use crate::types::{Class, Header, Message, OperationCode, Question, QuestionType, ResponseCode};
+use crate::types::{
+    Answer, Header, Message, OperationCode, Question, QuestionClass, QuestionType, ResourceClass,
+    ResourceType, ResponseCode,
+};
 
 mod types;
 
@@ -25,15 +28,23 @@ fn main() {
                         recursion_available: false,
                         response_code: ResponseCode::NoError,
                         question_count: 1,
-                        answer_count: 0,
+                        answer_count: 1,
                         authority_count: 0,
                         additional_count: 0,
                     },
                     question: Question {
-                        domain: "codecrafters.io".to_string(),
+                        name: "codecrafters.io".to_string(),
                         question_type: QuestionType::A,
-                        class: Class::IN,
+                        class: QuestionClass::IN,
                     },
+                    answers: vec![Answer {
+                        name: "codecrafters.io".to_string(),
+                        resource_type: ResourceType::A,
+                        class: ResourceClass::IN,
+                        time_to_live: 60,
+                        length: 4,
+                        data: vec![8, 8, 8, 8],
+                    }],
                 };
 
                 let response: Vec<u8> = message.into();
