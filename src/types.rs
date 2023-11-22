@@ -199,7 +199,7 @@ impl TryFrom<[u8; 12]> for Header {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum QuestionType {
     A = 1,
     NS = 2,
@@ -253,7 +253,7 @@ impl TryFrom<u16> for QuestionType {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum QuestionClass {
     IN = 1,
     CS = 2,
@@ -277,7 +277,7 @@ impl TryFrom<u16> for QuestionClass {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Question {
     pub name: String,
     pub question_type: QuestionType,

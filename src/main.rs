@@ -21,6 +21,21 @@ fn main() {
                 println!("1. Received Message: {:?}", received_message);
 
                 let response_message = if let Ok(received_message) = received_message {
+                    let mut answers = Vec::new();
+
+                    for question in &received_message.questions {
+                        answers.push(Answer {
+                            name: question.name.clone(),
+                            resource_type: ResourceType::A,
+                            class: ResourceClass::IN,
+                            time_to_live: 60,
+                            length: 4,
+                            data: vec![8, 8, 8, 8],
+                        });
+                    }
+
+                    let answers = answers;
+
                     Message {
                         header: Header {
                             id: received_message.header.id,
@@ -34,13 +49,13 @@ fn main() {
                                 OperationCode::Query => ResponseCode::NoError,
                                 _ => ResponseCode::NotImplemented,
                             },
-                            question_count: 1,
-                            answer_count: 1,
+                            question_count: received_message.questions.len() as u16,
+                            answer_count: answers.len() as u16,
                             authority_count: 0,
                             additional_count: 0,
                         },
                         questions: received_message.questions,
-                        answers: received_message.answers,
+                        answers,
                     }
                 } else {
                     Message {
