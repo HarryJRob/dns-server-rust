@@ -15,7 +15,7 @@ fn main() {
         match udp_socket.recv_from(&mut buf) {
             Ok((size, source)) => {
                 let received_message = Message::from(buf.to_vec());
-                println!("Received {} bytes from {}", size, size);
+                println!("Received {} bytes from {}", size, source);
 
                 let message = Message {
                     header: Header {
