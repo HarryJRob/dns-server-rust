@@ -63,7 +63,6 @@ pub enum OperationCode {
 
 impl From<u8> for OperationCode {
     fn from(value: u8) -> Self {
-        println!("Parsing {}", value);
         match value {
             0 => OperationCode::Query,
             1 => OperationCode::IQuery,
