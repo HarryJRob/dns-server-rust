@@ -14,19 +14,22 @@ fn main() {
     loop {
         match udp_socket.recv_from(&mut buf) {
             Ok((size, source)) => {
-                let received_data = String::from_utf8_lossy(&buf[0..size]);
+                let received_message = Message::from(buf.to_vec());
                 println!("Received {} bytes from {}", size, size);
 
                 let message = Message {
                     header: Header {
-                        id: 1234,
+                        id: received_message.header.id,
                         qr_indicator: true,
-                        op_code: OperationCode::Query,
+                        op_code: received_message.header.op_code,
                         authoritative_answer: false,
                         truncation: false,
-                        recursion_desired: false,
+                        recursion_desired: received_message.header.recursion_desired,
                         recursion_available: false,
-                        response_code: ResponseCode::NoError,
+                        response_code: match received_message.header.op_code {
+                            OperationCode::Query => ResponseCode::NoError,
+                            _ => ResponseCode::NotImplemented,
+                        },
                         question_count: 1,
                         answer_count: 1,
                         authority_count: 0,

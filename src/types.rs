@@ -24,10 +24,52 @@ impl From<Message> for Vec<u8> {
     }
 }
 
+impl From<Vec<u8>> for Message {
+    fn from(value: Vec<u8>) -> Self {
+        if value.len() < 12 {
+            panic!("Unable to parse header")
+        };
+
+        let header = &value[0..12];
+        let mut header_slice: [u8; 12] = [0; 12];
+        header_slice.clone_from_slice(header);
+        let header = Header::from(header_slice);
+
+        Message {
+            header,
+            question: Question {
+                name: "codecrafters.io".to_string(),
+                question_type: QuestionType::A,
+                class: QuestionClass::IN,
+            },
+            answers: vec![Answer {
+                name: "codecrafters.io".to_string(),
+                resource_type: ResourceType::A,
+                class: ResourceClass::IN,
+                time_to_live: 60,
+                length: 0,
+                data: vec![],
+            }],
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
 pub enum OperationCode {
     Query = 0,
     IQuery = 1,
     Status = 2,
+}
+
+impl From<u8> for OperationCode {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => OperationCode::Query,
+            1 => OperationCode::IQuery,
+            2 => OperationCode::Status,
+            _ => panic!("Unknown operation code"),
+        }
+    }
 }
 
 pub enum ResponseCode {
@@ -37,6 +79,20 @@ pub enum ResponseCode {
     NameError = 3,
     NotImplemented = 4,
     Refused = 5,
+}
+
+impl From<u8> for ResponseCode {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => ResponseCode::NoError,
+            1 => ResponseCode::FormatError,
+            2 => ResponseCode::ServerFailure,
+            3 => ResponseCode::NameError,
+            4 => ResponseCode::NotImplemented,
+            5 => ResponseCode::Refused,
+            _ => panic!("Unknown response code"),
+        }
+    }
 }
 
 pub struct Header {
@@ -76,6 +132,39 @@ impl From<Header> for [u8; 12] {
         res[11] = val.additional_count.to_be_bytes()[1];
 
         res
+    }
+}
+
+impl From<[u8; 12]> for Header {
+    fn from(value: [u8; 12]) -> Self {
+        let id: u16 = (value[0] as u16) << 8 | (value[1] as u16);
+        let qr_indicator = (value[2] >> 7 & 1) == 1;
+
+        let op_code = OperationCode::from(value[2] >> 3 & 0b00001111);
+        let authoritative_answer = (value[2] >> 2 & 1) == 1;
+        let truncation = (value[2] >> 1 & 1) == 1;
+        let recursion_desired = (value[2] & 1) == 1;
+        let recursion_available = (value[3] >> 7 & 1) == 1;
+        let response_code = ResponseCode::from(value[3] & 0b00001111);
+        let question_count = (value[4] as u16) << 8 | (value[5] as u16);
+        let answer_count = (value[6] as u16) << 8 | (value[7] as u16);
+        let authority_count = (value[8] as u16) << 8 | (value[9] as u16);
+        let additional_count = (value[10] as u16) << 8 | (value[11] as u16);
+
+        Header {
+            id,
+            qr_indicator,
+            op_code,
+            authoritative_answer,
+            truncation,
+            recursion_desired,
+            recursion_available,
+            response_code,
+            question_count,
+            answer_count,
+            authority_count,
+            additional_count,
+        }
     }
 }
 
