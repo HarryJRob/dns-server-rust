@@ -1,8 +1,8 @@
 use std::net::UdpSocket;
 
 use crate::types::{
-    Answer, Header, Message, OperationCode, Question, QuestionClass, QuestionType, ResourceClass,
-    ResourceType, ResponseCode,
+    Answer, DomainName, Header, Message, OperationCode, Question, QuestionClass, QuestionType,
+    ResourceClass, ResourceType, ResponseCode,
 };
 
 mod types;
@@ -74,12 +74,12 @@ fn main() {
                             additional_count: 0,
                         },
                         questions: vec![Question {
-                            name: "codecrafters.io".to_string(),
+                            name: DomainName::new("codecrafters.io".to_string()),
                             question_type: QuestionType::A,
                             question_class: QuestionClass::IN,
                         }],
                         answers: vec![Answer {
-                            name: "codecrafters.io".to_string(),
+                            name: DomainName::new("codecrafters.io".to_string()),
                             resource_type: ResourceType::A,
                             class: ResourceClass::IN,
                             time_to_live: 60,

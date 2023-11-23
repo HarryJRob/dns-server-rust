@@ -35,37 +35,76 @@ impl TryFrom<Vec<u8>> for Message {
             panic!("Unable to parse message as it is too short")
         };
 
-        let mut pointer = 0;
+        let mut offset = 0;
 
-        let header = &value[pointer..12];
+        let header = &value[offset..12].to_vec();
         let mut header_slice: [u8; 12] = [0; 12];
         header_slice.clone_from_slice(header);
         let header = Header::try_from(header_slice)?;
 
-        pointer += 12;
+        offset += 12;
 
         println!("Parsed header: {:?}", header);
 
-        let mut questions = Vec::new();
+        let mut questions = Vec::with_capacity(header.question_count as usize);
 
-        if header.question_count == 1 {
-            let remaining_buf = &value[pointer..];
-            let question = Question::try_from(remaining_buf.to_vec())?;
+        for _ in 0..header.question_count {
+            let name = DomainName::parse(&value[offset..].to_vec(), &value);
+            offset += name.byte_size as usize;
 
-            // null terminating character for the string, 2 bytes for the type and 2 bytes for the class
-            pointer += question.name.len() + 6;
+            let question_type = (value[offset] as u16) << 8 | value[offset + 1] as u16;
+            let question_type = QuestionType::try_from(question_type)?;
+            offset += 2;
+
+            let question_class = (value[offset] as u16) << 8 | value[offset + 1] as u16;
+            let question_class = QuestionClass::try_from(question_class)?;
+            offset += 2;
+
+            let question = Question {
+                name,
+                question_type,
+                question_class,
+            };
 
             println!("Parsed Question: {:?}", question);
-
             questions.push(question);
         }
 
-        let mut answers = Vec::new();
+        let mut answers = Vec::with_capacity(header.answer_count as usize);
 
-        if header.answer_count == 1 {
-            let remaining_buf = &value[pointer..];
-            let answer: Answer = Answer::try_from(remaining_buf.to_vec())?;
+        for _ in 0..header.answer_count {
+            let name = DomainName::parse(&value[offset..].to_vec(), &value);
+            offset += name.byte_size as usize;
 
+            let resource_type = (value[offset] as u16) << 8 | value[offset + 1] as u16;
+            let resource_type = ResourceType::try_from(resource_type)?;
+            offset += 2;
+
+            let resource_class = (value[offset] as u16) << 8 | value[offset + 1] as u16;
+            let resource_class = ResourceClass::try_from(resource_class)?;
+            offset += 2;
+
+            let time_to_live = (value[offset] as u32) << 24
+                | (value[offset + 1] as u32) << 16
+                | (value[offset + 2] as u32) << 8
+                | value[offset + 3] as u32;
+            offset += 4;
+
+            let length = (value[offset] as u16) << 8 | value[offset + 1] as u16;
+            offset += 2;
+
+            let data = value[offset..(offset + length as usize)].to_vec();
+
+            let answer = Answer {
+                name,
+                resource_type,
+                class: resource_class,
+                time_to_live,
+                length,
+                data,
+            };
+
+            println!("Parsed Answer: {:?}", answer);
             answers.push(answer);
         }
 
@@ -279,7 +318,7 @@ impl TryFrom<u16> for QuestionClass {
 
 #[derive(Debug, Clone)]
 pub struct Question {
-    pub name: String,
+    pub name: DomainName,
     pub question_type: QuestionType,
     pub question_class: QuestionClass,
 }
@@ -288,7 +327,7 @@ impl From<Question> for Vec<u8> {
     fn from(val: Question) -> Self {
         let mut res = Vec::new();
 
-        let name = encode_label(val.name);
+        let name = val.name.encode();
         let question_type = (val.question_type as u16).to_be_bytes();
         let class = (val.question_class as u16).to_be_bytes();
 
@@ -297,30 +336,6 @@ impl From<Question> for Vec<u8> {
         res.extend_from_slice(&class);
 
         res
-    }
-}
-
-impl TryFrom<Vec<u8>> for Question {
-    type Error = ();
-
-    fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
-        let name: String = decode_label(value.clone());
-
-        // skip both the end character of the name and the null terminating character
-        let pointer = name.len() + 2;
-
-        let question_type = (value[pointer] as u16) << 8 | value[pointer + 1] as u16;
-
-        let question_type = QuestionType::try_from(question_type)?;
-        let question_class = (value[pointer + 2] as u16) << 8 | value[pointer + 3] as u16;
-
-        let question_class = QuestionClass::try_from(question_class)?;
-
-        Ok(Question {
-            name,
-            question_type,
-            question_class,
-        })
     }
 }
 
@@ -394,7 +409,7 @@ impl TryFrom<u16> for ResourceClass {
 
 #[derive(Debug)]
 pub struct Answer {
-    pub name: String,
+    pub name: DomainName,
     pub resource_type: ResourceType,
     pub class: ResourceClass,
     pub time_to_live: u32,
@@ -406,7 +421,7 @@ impl From<Answer> for Vec<u8> {
     fn from(value: Answer) -> Self {
         let mut res: Vec<u8> = Vec::new();
 
-        let name = encode_label(value.name);
+        let name = value.name.encode();
         let resource_type = (value.resource_type as u16).to_be_bytes();
         let class = (value.class as u16).to_be_bytes();
         let time_to_live = value.time_to_live.to_be_bytes();
@@ -423,85 +438,82 @@ impl From<Answer> for Vec<u8> {
     }
 }
 
-impl TryFrom<Vec<u8>> for Answer {
-    type Error = ();
-
-    fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
-        println!("Value: {:?}", value);
-
-        let name: String = decode_label(value.clone());
-
-        println!("Name: {:?}", name);
-
-        // skip both the end character of the name and the null terminating character
-        let mut pointer = name.len() + 2;
-
-        let resource_type = (value[pointer] as u16) << 8 | value[pointer + 1] as u16;
-        let resource_type = ResourceType::try_from(resource_type)?;
-
-        println!("Resource Type: {:?}", resource_type);
-
-        let resource_class = (value[pointer + 2] as u16) << 8 | value[pointer + 3] as u16;
-        let resource_class = ResourceClass::try_from(resource_class)?;
-
-        println!("Resource Class: {:?}", resource_class);
-
-        let time_to_live = (value[pointer + 4] as u32) << 24
-            | (value[pointer + 5] as u32) << 16
-            | (value[pointer + 6] as u32) << 8
-            | value[pointer + 7] as u32;
-
-        println!("Time to Live: {:?}", time_to_live);
-
-        let length = (value[pointer + 8] as u16) << 8 | value[pointer + 9] as u16;
-
-        println!("Length: {:?}", time_to_live);
-
-        pointer += 10;
-        let data = value[pointer..(pointer + length as usize)].to_vec();
-
-        Ok(Answer {
-            name,
-            resource_type,
-            class: resource_class,
-            time_to_live,
-            length,
-            data,
-        })
-    }
+#[derive(Debug, Clone)]
+pub struct DomainName {
+    pub name: String,
+    pub byte_size: u8,
 }
 
-fn encode_label(label: String) -> Vec<u8> {
-    let mut res: Vec<u8> = Vec::new();
+impl DomainName {
+    pub fn new(value: String) -> Self {
+        let byte_size = value.len() as u8 + 1;
 
-    for part in label.split(".") {
-        res.push(part.len() as u8);
-        res.extend(part.as_bytes());
+        DomainName {
+            name: value,
+            byte_size,
+        }
     }
 
-    res.push(0);
+    pub fn parse(data: &Vec<u8>, original: &Vec<u8>) -> Self {
+        let mut parts = Vec::new();
+        let mut byte_size = 0;
 
-    res
-}
+        let mut offset = 0;
 
-fn decode_label(label: Vec<u8>) -> String {
-    let mut label_parts = Vec::new();
+        println!("Data: {:?}", data);
+        loop {
+            let first_byte = data[offset];
+            offset += 1;
 
-    let mut pointer = 0;
+            if first_byte & 0b1100_0000 == 0b1100_0000 {
+                // Decode pointer
+                let mut pointer_offset = (first_byte as u16) << 8 | data[offset] as u16;
+                pointer_offset &= !0b1100_0000_0000_0000;
+                let len = original[pointer_offset as usize];
 
-    loop {
-        let len = label[pointer] as usize;
+                pointer_offset += 1;
+                byte_size += 2;
 
-        if len == 0 {
-            break;
+                let parse_data = original
+                    [pointer_offset as usize..(pointer_offset + len as u16) as usize]
+                    .to_vec();
+
+                parts.push(String::from_utf8(parse_data).expect("Unable to decode label"));
+                break;
+            } else {
+                // Decode string
+                if first_byte == 0 {
+                    byte_size += 1;
+                    break;
+                }
+
+                let len = first_byte;
+
+                byte_size += len + 1;
+
+                let parse_data = data[offset..offset + len as usize].to_vec();
+                offset += len as usize;
+
+                parts.push(String::from_utf8(parse_data).expect("Unable to decode label"));
+            };
         }
 
-        pointer += 1;
-
-        let buf = &label[pointer..pointer + len];
-        label_parts.push(String::from_utf8(buf.to_vec()).expect("Unable to decode label"));
-        pointer = pointer + len;
+        DomainName {
+            name: parts.join("."),
+            byte_size: byte_size,
+        }
     }
 
-    label_parts.join(".")
+    pub fn encode(self) -> Vec<u8> {
+        let mut res: Vec<u8> = Vec::new();
+
+        for part in self.name.split(".") {
+            res.push(part.len() as u8);
+            res.extend(part.as_bytes());
+        }
+
+        res.push(0);
+
+        res
+    }
 }
