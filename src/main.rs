@@ -1,4 +1,4 @@
-use std::net::UdpSocket;
+use std::{env::args, net::UdpSocket};
 
 use crate::types::{
     Answer, DomainName, Header, Message, OperationCode, Question, QuestionClass, QuestionType,
@@ -8,11 +8,29 @@ use crate::types::{
 mod types;
 
 fn main() {
-    let udp_socket = UdpSocket::bind("127.0.0.1:2053").expect("Failed to bind to address");
+    let receiver_socket =
+        UdpSocket::bind("127.0.0.1:2053").expect("Failed to bind receiver socket");
+
+    let resolver_socket =
+        if let Some(addr) = args().skip_while(|arg| arg != "--resolver").skip(1).next() {
+            println!("Attempting to bind to resolver... {:?}", addr);
+
+            let resolver_socket =
+                UdpSocket::bind("127.0.0.1:2054").expect("Failed to bind resolver socket");
+
+            resolver_socket
+                .connect(addr)
+                .expect("Unable to connect to the resolver server");
+
+            Some(resolver_socket)
+        } else {
+            None
+        };
+
     let mut buf = [0; 512];
 
     loop {
-        match udp_socket.recv_from(&mut buf) {
+        match receiver_socket.recv_from(&mut buf) {
             Ok((size, source)) => {
                 println!("Received {} bytes from {}", size, source);
 
@@ -24,14 +42,57 @@ fn main() {
                     let mut answers = Vec::new();
 
                     for question in &received_message.questions {
-                        answers.push(Answer {
-                            name: question.name.clone(),
-                            resource_type: ResourceType::A,
-                            class: ResourceClass::IN,
-                            time_to_live: 60,
-                            length: 4,
-                            data: vec![8, 8, 8, 8],
-                        });
+                        match &resolver_socket {
+                            Some(resolver_socket) => {
+                                println!("Resolving using resolver socket");
+
+                                let resolver_message = Message {
+                                    header: Header {
+                                        id: rand::random(),
+                                        qr_indicator: received_message.header.qr_indicator,
+                                        op_code: received_message.header.op_code,
+                                        authoritative_answer: false,
+                                        truncation: false,
+                                        recursion_desired: false,
+                                        recursion_available: false,
+                                        response_code: ResponseCode::NoError,
+                                        question_count: 1,
+                                        answer_count: 0,
+                                        authority_count: 0,
+                                        additional_count: 0,
+                                    },
+                                    questions: vec![question.clone()],
+                                    answers: vec![],
+                                };
+
+                                let resolver_message: Vec<u8> = resolver_message.into();
+
+                                resolver_socket
+                                    .send(&resolver_message)
+                                    .expect("Unknown error when trying to forward request");
+
+                                resolver_socket
+                                    .recv_from(&mut buf)
+                                    .expect("No response from resolver socket");
+
+                                let resolver_response = Message::try_from(buf.to_vec())
+                                    .expect("Unable to parse resolver response");
+
+                                println!("Resolver Response: {:?}", resolver_response);
+
+                                answers.extend(resolver_response.answers);
+                            }
+                            None => {
+                                answers.push(Answer {
+                                    name: question.name.clone(),
+                                    resource_type: ResourceType::A,
+                                    class: ResourceClass::IN,
+                                    time_to_live: 60,
+                                    length: 4,
+                                    data: vec![8, 8, 8, 8],
+                                });
+                            }
+                        }
                     }
 
                     let answers = answers;
@@ -93,7 +154,7 @@ fn main() {
 
                 let response: Vec<u8> = response_message.into();
 
-                udp_socket
+                receiver_socket
                     .send_to(&response, source)
                     .expect("Failed to send response");
             }

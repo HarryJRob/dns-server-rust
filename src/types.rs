@@ -44,8 +44,6 @@ impl TryFrom<Vec<u8>> for Message {
 
         offset += 12;
 
-        println!("Parsed header: {:?}", header);
-
         let mut questions = Vec::with_capacity(header.question_count as usize);
 
         for _ in 0..header.question_count {
@@ -66,7 +64,6 @@ impl TryFrom<Vec<u8>> for Message {
                 question_class,
             };
 
-            println!("Parsed Question: {:?}", question);
             questions.push(question);
         }
 
@@ -81,7 +78,7 @@ impl TryFrom<Vec<u8>> for Message {
             offset += 2;
 
             let resource_class = (value[offset] as u16) << 8 | value[offset + 1] as u16;
-            let resource_class = ResourceClass::try_from(resource_class)?;
+            let resource_class: ResourceClass = ResourceClass::try_from(resource_class)?;
             offset += 2;
 
             let time_to_live = (value[offset] as u32) << 24
@@ -104,7 +101,6 @@ impl TryFrom<Vec<u8>> for Message {
                 data,
             };
 
-            println!("Parsed Answer: {:?}", answer);
             answers.push(answer);
         }
 
@@ -440,27 +436,50 @@ impl From<Answer> for Vec<u8> {
 
 #[derive(Debug, Clone)]
 pub struct DomainName {
-    pub name: String,
+    pub labels: Vec<Label>,
     pub byte_size: u8,
+}
+
+#[derive(Debug, Clone)]
+pub struct Label {
+    pub name: String,
 }
 
 impl DomainName {
     pub fn new(value: String) -> Self {
-        let byte_size = value.len() as u8 + 1;
+        let labels: Vec<Label> = value
+            .split(".")
+            .map(|part| Label {
+                name: part.to_string(),
+            })
+            .collect();
 
-        DomainName {
-            name: value,
-            byte_size,
-        }
+        let byte_size = labels
+            .iter()
+            .map(|label| label.name.len() + 1)
+            .sum::<usize>() as u8
+            + 1;
+
+        DomainName { labels, byte_size }
     }
 
     pub fn parse(data: &Vec<u8>, original: &Vec<u8>) -> Self {
+        let result = Self::parse_labels_from_buffer(&data, &original);
+
+        DomainName {
+            labels: result.0,
+            byte_size: result.1,
+        }
+    }
+
+    fn parse_labels_from_buffer(data: &Vec<u8>, original: &Vec<u8>) -> (Vec<Label>, u8) {
+        println!("Parsing labels from: {:?}", data);
+
         let mut parts = Vec::new();
         let mut byte_size = 0;
 
         let mut offset = 0;
 
-        println!("Data: {:?}", data);
         loop {
             let first_byte = data[offset];
             offset += 1;
@@ -469,16 +488,14 @@ impl DomainName {
                 // Decode pointer
                 let mut pointer_offset = (first_byte as u16) << 8 | data[offset] as u16;
                 pointer_offset &= !0b1100_0000_0000_0000;
-                let len = original[pointer_offset as usize];
 
-                pointer_offset += 1;
                 byte_size += 2;
 
-                let parse_data = original
-                    [pointer_offset as usize..(pointer_offset + len as u16) as usize]
-                    .to_vec();
+                let parse_data = original[pointer_offset as usize..].to_vec();
 
-                parts.push(String::from_utf8(parse_data).expect("Unable to decode label"));
+                let labels = Self::parse_labels_from_buffer(&parse_data, original);
+
+                parts.extend(labels.0);
                 break;
             } else {
                 // Decode string
@@ -494,22 +511,21 @@ impl DomainName {
                 let parse_data = data[offset..offset + len as usize].to_vec();
                 offset += len as usize;
 
-                parts.push(String::from_utf8(parse_data).expect("Unable to decode label"));
+                parts.push(Label {
+                    name: String::from_utf8(parse_data).expect("Unable to decode label"),
+                });
             };
         }
 
-        DomainName {
-            name: parts.join("."),
-            byte_size: byte_size,
-        }
+        (parts, byte_size)
     }
 
     pub fn encode(self) -> Vec<u8> {
         let mut res: Vec<u8> = Vec::new();
 
-        for part in self.name.split(".") {
-            res.push(part.len() as u8);
-            res.extend(part.as_bytes());
+        for label in self.labels {
+            res.push(label.name.len() as u8);
+            res.extend(label.name.as_bytes());
         }
 
         res.push(0);
